@@ -6,14 +6,16 @@ use std::{
 use crate::{
     common::{
         config::{ConfigLoader, TomlConfigLoader},
+        constants::EASYTIER_VERSION,
         global_ctx::GlobalCtxEvent,
         stun::StunInfoCollectorTrait,
     },
     instance::instance::Instance,
     peers::rpc_service::PeerManagerRpcService,
-    rpc::{
-        cli::{PeerInfo, Route, StunInfo},
-        peer::GetIpListResponse,
+    proto::{
+        cli::{PeerInfo, Route},
+        common::StunInfo,
+        peer_rpc::GetIpListResponse,
     },
     utils::{list_peer_route_pair, PeerRoutePair},
 };
@@ -140,7 +142,7 @@ impl EasyTierLauncher {
                         .map(|x| x.to_string())
                         .unwrap_or_default(),
                     hostname: global_ctx_c.get_hostname(),
-                    version: env!("CARGO_PKG_VERSION").to_string(),
+                    version: EASYTIER_VERSION.to_string(),
                     ips: global_ctx_c.get_ip_collector().collect_ip_addrs().await,
                     stun_info: global_ctx_c.get_stun_info_collector().get_stun_info(),
                     listeners: global_ctx_c

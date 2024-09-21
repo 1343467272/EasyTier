@@ -4,7 +4,8 @@ use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use tokio::net::{TcpListener, TcpSocket, TcpStream};
 
-use crate::{rpc::TunnelInfo, tunnel::common::setup_sokcet2};
+use super::TunnelInfo;
+use crate::tunnel::common::setup_sokcet2;
 
 use super::{
     check_scheme_and_get_socket_addr, check_scheme_and_get_socket_addr_ext,
@@ -56,9 +57,10 @@ impl TunnelListener for TcpTunnelListener {
         stream.set_nodelay(true).unwrap();
         let info = TunnelInfo {
             tunnel_type: "tcp".to_owned(),
-            local_addr: self.local_url().into(),
-            remote_addr: super::build_url_from_socket_addr(&stream.peer_addr()?.to_string(), "tcp")
-                .into(),
+            local_addr: Some(self.local_url().into()),
+            remote_addr: Some(
+                super::build_url_from_socket_addr(&stream.peer_addr()?.to_string(), "tcp").into(),
+            ),
         };
 
         let (r, w) = stream.into_split();
@@ -82,9 +84,10 @@ fn get_tunnel_with_tcp_stream(
 
     let info = TunnelInfo {
         tunnel_type: "tcp".to_owned(),
-        local_addr: super::build_url_from_socket_addr(&stream.local_addr()?.to_string(), "tcp")
-            .into(),
-        remote_addr: remote_url.into(),
+        local_addr: Some(
+            super::build_url_from_socket_addr(&stream.local_addr()?.to_string(), "tcp").into(),
+        ),
+        remote_addr: Some(remote_url.into()),
     };
 
     let (r, w) = stream.into_split();
@@ -136,7 +139,11 @@ impl TcpTunnelConnector {
                 socket2::Type::STREAM,
                 Some(socket2::Protocol::TCP),
             )?;
-            setup_sokcet2(&socket2_socket, bind_addr)?;
+
+            if let Err(e) = setup_sokcet2(&socket2_socket, bind_addr) {
+                tracing::error!(bind_addr = ?bind_addr, ?addr, "bind addr fail: {:?}", e);
+                continue;
+            }
 
             let socket = TcpSocket::from_std_stream(socket2_socket.into());
             futures.push(socket.connect(addr.clone()));
