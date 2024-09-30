@@ -8,7 +8,7 @@ use std::{
     },
 };
 
-use futures::{SinkExt, StreamExt, TryFutureExt};
+use futures::{StreamExt, TryFutureExt};
 
 use prost::Message;
 
@@ -18,13 +18,13 @@ use tokio::{
     time::{timeout, Duration},
 };
 
-use tokio_util::sync::PollSender;
 use tracing::Instrument;
 use zerocopy::AsBytes;
 
 use crate::{
     common::{
         config::{NetworkIdentity, NetworkSecretDigest},
+        defer,
         error::Error,
         global_ctx::ArcGlobalCtx,
         PeerId,
@@ -103,7 +103,9 @@ impl PeerConn {
             my_peer_id,
             global_ctx,
 
-            tunnel: Arc::new(Mutex::new(Box::new(mpsc_tunnel))),
+            tunnel: Arc::new(Mutex::new(Box::new(defer::Defer::new(move || {
+                mpsc_tunnel.close()
+            })))),
             sink,
             recv: Arc::new(Mutex::new(Some(recv))),
             tunnel_info,
@@ -243,7 +245,7 @@ impl PeerConn {
     pub async fn start_recv_loop(&mut self, packet_recv_chan: PacketRecvChan) {
         let mut stream = self.recv.lock().await.take().unwrap();
         let sink = self.sink.clone();
-        let mut sender = PollSender::new(packet_recv_chan.clone());
+        let sender = packet_recv_chan.clone();
         let close_event_sender = self.close_event_sender.clone().unwrap();
         let conn_id = self.conn_id;
         let ctrl_sender = self.ctrl_resp_sender.clone();
@@ -280,7 +282,9 @@ impl PeerConn {
                             tracing::error!(?e, "peer conn send ctrl resp error");
                         }
                     } else {
-                        if sender.send(zc_packet).await.is_err() {
+                        if zc_packet.is_lossy() {
+                            let _ = sender.try_send(zc_packet);
+                        } else if sender.send(zc_packet).await.is_err() {
                             break;
                         }
                     }
